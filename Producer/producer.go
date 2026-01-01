@@ -31,13 +31,15 @@ func main() {
 
 	//Create an exchange
 	err = ch1.ExchangeDeclare(
-		"x-test",
-		"direct",
+		// "x-test",
+		"x-fanout",
+		// "direct",
+		"fanout",
 		true,
 		false,
 		false,
 		false,
-		amqp091.Table{"x-queue-type": "quorum"},
+		nil,
 	)
 	if err != nil {
 		log.Fatalln("Exchange declaration failed", err)
@@ -46,7 +48,7 @@ func main() {
 
 	//Create a queue
 	q1, err := ch1.QueueDeclare(
-		"test_queue",
+		"test_queue1",
 		true,
 		false,
 		false,
@@ -58,12 +60,24 @@ func main() {
 	}
 	fmt.Println("Queue declared", q1)
 
-	//Create a context for timeout
-	ctx, cancle := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancle()
+	q2, err := ch1.QueueDeclare(
+		"test_queue2",
+		true,
+		false,
+		false,
+		false,
+		amqp091.Table{"x-queue-type": "quorum"},
+	)
+	if err != nil {
+		log.Fatalln("Queue declaration failed", err)
+	}
+	fmt.Println("Queue declared", q2)
 
 	//Bind the queue to the exchange
-	ch1.QueueBind(q1.Name, "test", "x-test", false, nil)
+	//in the case of fanout exchange it igonres the routing key
+	//it is here because of easyness of code practice
+	ch1.QueueBind(q1.Name, "test", "x-fanout", false, nil)
+	ch1.QueueBind(q2.Name, "test", "x-fanout", false, nil)
 
 	//Take the input from user
 	reader := bufio.NewReader(os.Stdin)
@@ -79,11 +93,14 @@ func main() {
 			break
 		}
 
+		//Create a context for timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		//Publish a message
-		err = ch1.PublishWithContext(ctx, "x-test", "test", false, false, amqp091.Publishing{
+		err = ch1.PublishWithContext(ctx, "x-fanout", "test", false, false, amqp091.Publishing{
 			ContentType: "text/plain",
 			Body:        []byte(message),
 		})
+		cancel()
 		if err != nil {
 			log.Fatalln(err)
 		}
